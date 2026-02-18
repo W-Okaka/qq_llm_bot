@@ -1,0 +1,13 @@
+# Python 虚拟环境
+venv/
+.venv/
+
+# Python 字节码缓存
+__pycache__/
+*.pyc
+
+# 环境变量（含 API 密钥）
+.env
+
+# 运行时生成的数据
+src/plugins/llm_chat/data/

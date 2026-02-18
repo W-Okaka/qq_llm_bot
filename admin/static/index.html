@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QQ Bot 配置管理器</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>⚙️ QQ Bot 配置管理器</h1>
+            <p>实时配置提示词 · 管理聊天历史</p>
+        </header>
+
+        <div class="main-grid">
+            <!-- 提示词编辑器 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2><span class="icon">✨</span> 系统提示词</h2>
+                    <span class="char-count" id="charCount">0 字符</span>
+                </div>
+                <div class="card-body">
+                    <label>快速模板</label>
+                    <div class="template-selector" id="templateSelector">
+                        <!-- 动态加载 -->
+                    </div>
+
+                    <div class="form-group">
+                        <label>提示词内容</label>
+                        <textarea id="promptEditor" placeholder="输入系统提示词..."></textarea>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="savePrompt()">
+                            💾 保存并生效
+                        </button>
+                        <button class="btn btn-secondary" onclick="loadPrompt()">
+                            🔄 重新加载
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 聊天历史管理 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2><span class="icon">💬</span> 聊天历史</h2>
+                    <button class="btn btn-danger btn-sm" onclick="clearAllHistory()">
+                        🗑️ 清空全部
+                    </button>
+                </div>
+                <div class="card-body">
+                    <label>会话列表</label>
+                    <div class="session-list" id="sessionList">
+                        <div class="empty-state">
+                            <div class="icon">📭</div>
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+
+                    <label>消息记录 <span id="currentSession" style="color: var(--accent)"></span></label>
+                    <div class="message-list" id="messageList">
+                        <div class="empty-state">
+                            <div class="icon">💭</div>
+                            <p>选择一个会话查看消息</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

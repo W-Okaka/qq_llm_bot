@@ -1,0 +1,13 @@
+[project]
+name = "qq_llm_bot"
+version = "0.1.0"
+description = "QQ Bot based on NoneBot2"
+requires-python = ">=3.10"
+
+[tool.nonebot]
+adapters = [
+    { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" }
+]
+plugins = []
+plugin_dirs = ["src/plugins"]
+builtin_plugins = []
