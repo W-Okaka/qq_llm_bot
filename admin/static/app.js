@@ -5,9 +5,49 @@
 // ========== 全局变量 ==========
 let currentSessionId = null;
 let templates = [];
+let authToken = '';
+
+// ========== 鉴权 ==========
+function getAuthToken() {
+    // 优先从 URL 参数读取
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get('token');
+    if (urlToken) {
+        localStorage.setItem('admin_token', urlToken);
+        // 清除 URL 中的 token 参数
+        window.history.replaceState({}, '', window.location.pathname);
+        return urlToken;
+    }
+    // 其次从 localStorage 读取
+    return localStorage.getItem('admin_token') || '';
+}
+
+function promptForToken() {
+    const token = prompt('请输入管理员 Token:');
+    if (token) {
+        localStorage.setItem('admin_token', token);
+        authToken = token;
+        // 重新加载数据
+        loadPrompt();
+        loadTemplates();
+        loadSessions();
+    }
+}
+
+function authFetch(url, options = {}) {
+    if (!options.headers) {
+        options.headers = {};
+    }
+    if (authToken) {
+        options.headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    return fetch(url, options);
+}
 
 // ========== 初始化 ==========
 document.addEventListener('DOMContentLoaded', () => {
+    authToken = getAuthToken();
+    loadProviders();
     loadPrompt();
     loadTemplates();
     loadSessions();
@@ -40,11 +80,69 @@ function updateCharCount() {
     document.getElementById('charCount').textContent = `${text.length} 字符`;
 }
 
+// ========== 通用响应处理 ==========
+async function handleResponse(res) {
+    if (res.status === 401) {
+        showToast('Token 无效或未设置，请重新输入', 'error');
+        promptForToken();
+        return null;
+    }
+    return res;
+}
+
+// ========== 模型切换 ==========
+async function loadProviders() {
+    try {
+        const res = await authFetch('/api/providers');
+        const checked = await handleResponse(res);
+        if (!checked) return;
+        const data = await checked.json();
+
+        const container = document.getElementById('providerSelector');
+        const currentLabel = document.getElementById('currentModel');
+
+        container.innerHTML = data.providers.map(p => `
+      <button class="template-btn ${p.id === data.active ? 'active' : ''}"
+              data-id="${p.id}" onclick="switchProvider('${p.id}')">
+        ${p.name}
+      </button>
+    `).join('');
+
+        const active = data.providers.find(p => p.id === data.active);
+        if (active) {
+            currentLabel.textContent = `当前: ${active.name} (${active.model})`;
+        }
+    } catch (e) {
+        console.error('加载模型列表失败', e);
+    }
+}
+
+async function switchProvider(providerId) {
+    try {
+        const res = await authFetch('/api/providers/active', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider_id: providerId })
+        });
+        const checked = await handleResponse(res);
+        if (!checked) return;
+        const data = await checked.json();
+        if (data.success) {
+            showToast(data.message);
+            loadProviders();
+        }
+    } catch (e) {
+        showToast('切换模型失败', 'error');
+    }
+}
+
 // ========== 提示词相关 ==========
 async function loadPrompt() {
     try {
-        const res = await fetch('/api/prompt');
-        const data = await res.json();
+        const res = await authFetch('/api/prompt');
+        const checked = await handleResponse(res);
+        if (!checked) return;
+        const data = await checked.json();
         document.getElementById('promptEditor').value = data.prompt;
         updateCharCount();
     } catch (e) {
@@ -55,12 +153,14 @@ async function loadPrompt() {
 async function savePrompt() {
     const prompt = document.getElementById('promptEditor').value;
     try {
-        const res = await fetch('/api/prompt', {
+        const res = await authFetch('/api/prompt', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt })
         });
-        const data = await res.json();
+        const checked = await handleResponse(res);
+        if (!checked) return;
+        const data = await checked.json();
         if (data.success) {
             showToast('提示词已保存，下次对话生效！');
             // 取消所有模板选中状态
@@ -73,8 +173,10 @@ async function savePrompt() {
 
 async function loadTemplates() {
     try {
-        const res = await fetch('/api/prompt/templates');
-        const data = await res.json();
+        const res = await authFetch('/api/prompt/templates');
+        const checked = await handleResponse(res);
+        if (!checked) return;
+        const data = await checked.json();
         templates = data.templates;
 
         const container = document.getElementById('templateSelector');
@@ -90,12 +192,14 @@ async function loadTemplates() {
 
 async function applyTemplate(templateId) {
     try {
-        const res = await fetch('/api/prompt/template', {
+        const res = await authFetch('/api/prompt/template', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ template_id: templateId })
         });
-        const data = await res.json();
+        const checked = await handleResponse(res);
+        if (!checked) return;
+        const data = await checked.json();
         if (data.success) {
             document.getElementById('promptEditor').value = data.prompt;
             updateCharCount();
@@ -114,8 +218,10 @@ async function applyTemplate(templateId) {
 // ========== 历史记录相关 ==========
 async function loadSessions() {
     try {
-        const res = await fetch('/api/history');
-        const data = await res.json();
+        const res = await authFetch('/api/history');
+        const checked = await handleResponse(res);
+        if (!checked) return;
+        const data = await checked.json();
 
         const container = document.getElementById('sessionList');
         if (data.sessions.length === 0) {
@@ -160,8 +266,10 @@ async function selectSession(sessionId) {
     });
 
     try {
-        const res = await fetch(`/api/history/${sessionId}`);
-        const data = await res.json();
+        const res = await authFetch(`/api/history/${sessionId}`);
+        const checked = await handleResponse(res);
+        if (!checked) return;
+        const data = await checked.json();
 
         const container = document.getElementById('messageList');
         if (data.messages.length === 0) {
@@ -200,7 +308,7 @@ async function clearSession(sessionId) {
     if (!confirm(`确定要删除会话 ${sessionId} 的所有消息吗？`)) return;
 
     try {
-        await fetch(`/api/history/${sessionId}`, { method: 'DELETE' });
+        await authFetch(`/api/history/${sessionId}`, { method: 'DELETE' });
         showToast('会话已删除');
 
         if (currentSessionId === sessionId) {
@@ -222,7 +330,7 @@ async function clearSession(sessionId) {
 
 async function deleteMessage(sessionId, index) {
     try {
-        await fetch(`/api/history/${sessionId}/${index}`, { method: 'DELETE' });
+        await authFetch(`/api/history/${sessionId}/${index}`, { method: 'DELETE' });
         showToast('消息已删除');
         selectSession(sessionId);
         loadSessions();
@@ -235,7 +343,7 @@ async function clearAllHistory() {
     if (!confirm('确定要清空所有聊天历史吗？此操作不可撤销！')) return;
 
     try {
-        await fetch('/api/history', { method: 'DELETE' });
+        await authFetch('/api/history', { method: 'DELETE' });
         showToast('所有历史记录已清空');
         currentSessionId = null;
         document.getElementById('currentSession').textContent = '';

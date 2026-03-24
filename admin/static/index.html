@@ -16,6 +16,20 @@
         </header>
 
         <div class="main-grid">
+            <!-- 模型切换 -->
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-header">
+                    <h2><span class="icon">🤖</span> 模型切换</h2>
+                    <span id="currentModel" style="color: var(--accent); font-weight: 600;"></span>
+                </div>
+                <div class="card-body">
+                    <label>选择模型</label>
+                    <div class="template-selector" id="providerSelector">
+                        <!-- 动态加载 -->
+                    </div>
+                </div>
+            </div>
+
             <!-- 提示词编辑器 -->
             <div class="card">
                 <div class="card-header">

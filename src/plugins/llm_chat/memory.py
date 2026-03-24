@@ -1,11 +1,16 @@
 """
 人物记忆管理模块 - 通过 LLM 总结聊天记录，持久化关键人物信息
+支持按 session 隔离记忆（每个群/私聊独立记忆文件）
 """
 from pathlib import Path
 from typing import Dict, List
 
+from nonebot.log import logger
+
 DATA_DIR = Path(__file__).parent / "data"
-MEMORY_FILE = DATA_DIR / "memory.md"
+MEMORY_DIR = DATA_DIR / "memory"
+# 旧的全局记忆文件（用于迁移）
+_LEGACY_MEMORY_FILE = DATA_DIR / "memory.md"
 
 # 当会话历史 >= MEMORY_TRIGGER 条时触发总结
 MEMORY_TRIGGER = 80
@@ -13,28 +18,60 @@ MEMORY_TRIGGER = 80
 MEMORY_BATCH = 50
 
 
-def load_memory() -> str:
-    """读取 memory.md 内容"""
-    if MEMORY_FILE.exists():
+def _memory_path(session_id: str) -> Path:
+    """每个 session 一个记忆文件"""
+    safe_name = session_id.replace("/", "_")
+    return MEMORY_DIR / f"{safe_name}.md"
+
+
+def migrate_legacy_memory():
+    """迁移旧的全局 memory.md 到按 session 隔离的记忆文件"""
+    if not _LEGACY_MEMORY_FILE.exists():
+        return
+
+    legacy_content = _LEGACY_MEMORY_FILE.read_text(encoding="utf-8")
+    if not legacy_content.strip():
+        _LEGACY_MEMORY_FILE.rename(_LEGACY_MEMORY_FILE.with_suffix(".md.bak"))
+        return
+
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+    from .history import session_histories
+    migrated = 0
+    for sid in session_histories:
+        if sid.startswith("group_"):
+            target = _memory_path(sid)
+            if not target.exists():
+                target.write_text(legacy_content, encoding="utf-8")
+                migrated += 1
+
+    _LEGACY_MEMORY_FILE.rename(_LEGACY_MEMORY_FILE.with_suffix(".md.bak"))
+    logger.info(f"已迁移旧记忆到 {migrated} 个群聊 session，旧文件已备份为 memory.md.bak")
+
+
+def load_memory(session_id: str) -> str:
+    """读取指定 session 的记忆内容"""
+    path = _memory_path(session_id)
+    if path.exists():
         try:
-            return MEMORY_FILE.read_text(encoding="utf-8")
+            return path.read_text(encoding="utf-8")
         except IOError:
             pass
     return ""
 
 
-def save_memory(content: str):
-    """写入 memory.md"""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    MEMORY_FILE.write_text(content, encoding="utf-8")
+def save_memory(session_id: str, content: str):
+    """写入指定 session 的记忆"""
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    _memory_path(session_id).write_text(content, encoding="utf-8")
 
 
-def get_memory_for_prompt() -> str:
+def get_memory_for_prompt(session_id: str) -> str:
     """返回用于拼接到 system prompt 的记忆文本"""
-    memory = load_memory()
+    memory = load_memory(session_id)
     if not memory.strip():
         return ""
-    return f"\n\n--- 以下是你对群友们的长期记忆，请自然地运用这些信息 ---\n{memory}"
+    return f"\n\n--- 以下是你对这个群/对话中群友们的长期记忆 ---\n{memory}"
 
 
 def build_summarize_prompt(messages_batch: List[Dict[str, str]], existing_memory: str) -> List[Dict[str, str]]:

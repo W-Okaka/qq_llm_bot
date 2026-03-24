@@ -1,14 +1,18 @@
 """
-QQ Bot 配置管理器 - 后端服务
+QQ Bot 配置管理器 - 独立后端服务（离线备用）
+当 Bot 进程运行时，Admin 面板已集成在 Bot 内（/admin），无需单独启动此服务。
+仅在 Bot 未运行、需要独立查看/编辑配置时，才手动运行此文件。
+注意：此模式下历史记录操作直接读写磁盘文件，无法与 Bot 内存同步。
 """
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="QQ Bot Config Manager")
@@ -18,7 +22,7 @@ BASE_DIR = Path(__file__).parent.parent
 
 # 导入 bot 侧的默认提示词，确保一致性
 sys.path.insert(0, str(BASE_DIR))
-from src.plugins.llm_chat.config import DEFAULT_PROMPT
+from src.plugins.llm_chat.config import DEFAULT_PROMPT, PROVIDERS, DEFAULT_PROVIDER
 
 PLUGIN_DIR = BASE_DIR / "src" / "plugins" / "llm_chat"
 DATA_DIR = PLUGIN_DIR / "data"
@@ -26,8 +30,26 @@ CONFIG_FILE = DATA_DIR / "config.json"
 HISTORY_FILE = DATA_DIR / "chat_history.json"
 STATIC_DIR = Path(__file__).parent / "static"
 
-# ============ 静态文件（放在最前面）============
-# 挂载静态文件目录
+# ============ 鉴权配置 ============
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """API 鉴权中间件"""
+    path = request.url.path
+    # 静态文件、首页、favicon 不需要鉴权
+    if path.startswith("/static") or path == "/" or path == "/favicon.ico":
+        return await call_next(request)
+    # API 需要鉴权（仅当配置了 token 时）
+    if ADMIN_TOKEN:
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {ADMIN_TOKEN}":
+            return JSONResponse(status_code=401, content={"detail": "未授权"})
+    return await call_next(request)
+
+
+# ============ 静态文件 ============
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
@@ -35,6 +57,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 async def index():
     """主页"""
     return FileResponse(STATIC_DIR / "index.html")
+
 
 # 预设模板
 PROMPT_TEMPLATES = {
@@ -106,6 +129,10 @@ class PromptTemplate(BaseModel):
     template_id: str
 
 
+class ProviderSwitch(BaseModel):
+    provider_id: str
+
+
 # ============ 提示词 API ============
 
 @app.get("/api/prompt")
@@ -121,7 +148,13 @@ async def get_prompt():
 async def update_prompt(data: PromptUpdate):
     """更新提示词（热重载）"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    config = {"system_prompt": data.prompt}
+    config = {}
+    if CONFIG_FILE.exists():
+        try:
+            config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, IOError):
+            pass
+    config["system_prompt"] = data.prompt
     CONFIG_FILE.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"success": True, "message": "提示词已更新，下次对话生效"}
 
@@ -145,9 +178,53 @@ async def apply_template(data: PromptTemplate):
 
     prompt = PROMPT_TEMPLATES[data.template_id]["prompt"]
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    config = {"system_prompt": prompt}
+    config = {}
+    if CONFIG_FILE.exists():
+        try:
+            config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, IOError):
+            pass
+    config["system_prompt"] = prompt
     CONFIG_FILE.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"success": True, "prompt": prompt}
+
+
+# ============ 模型 Provider API ============
+
+@app.get("/api/providers")
+async def get_providers():
+    """获取所有 provider 及当前活跃 id"""
+    config = {}
+    if CONFIG_FILE.exists():
+        try:
+            config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, IOError):
+            pass
+    active_id = config.get("active_provider", DEFAULT_PROVIDER)
+    if active_id not in PROVIDERS:
+        active_id = DEFAULT_PROVIDER
+    providers = [
+        {"id": pid, "name": p["name"], "api_type": p["api_type"], "model": p["model"]}
+        for pid, p in PROVIDERS.items()
+    ]
+    return {"providers": providers, "active": active_id}
+
+
+@app.put("/api/providers/active")
+async def switch_provider(data: ProviderSwitch):
+    """切换活跃 provider"""
+    if data.provider_id not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"未知的 provider: {data.provider_id}")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    config = {}
+    if CONFIG_FILE.exists():
+        try:
+            config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, IOError):
+            pass
+    config["active_provider"] = data.provider_id
+    CONFIG_FILE.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"success": True, "message": f"已切换到 {PROVIDERS[data.provider_id]['name']}"}
 
 
 # ============ 历史记录 API ============
@@ -184,7 +261,7 @@ async def get_session_history(session_id: str):
 
 @app.delete("/api/history/{session_id}")
 async def clear_session(session_id: str):
-    """清空指定会话"""
+    """清空指定会话（注意：bot 运行时修改可能被覆盖）"""
     if not HISTORY_FILE.exists():
         raise HTTPException(status_code=404, detail="历史记录不存在")
 
@@ -198,7 +275,7 @@ async def clear_session(session_id: str):
 
 @app.delete("/api/history/{session_id}/{index}")
 async def delete_message(session_id: str, index: int):
-    """删除单条消息"""
+    """删除单条消息（注意：bot 运行时修改可能被覆盖）"""
     if not HISTORY_FILE.exists():
         raise HTTPException(status_code=404, detail="历史记录不存在")
 
@@ -218,7 +295,7 @@ async def delete_message(session_id: str, index: int):
 
 @app.delete("/api/history")
 async def clear_all_history():
-    """清空所有历史记录"""
+    """清空所有历史记录（注意：bot 运行时修改可能被覆盖）"""
     HISTORY_FILE.write_text("{}", encoding="utf-8")
     return {"success": True}
 

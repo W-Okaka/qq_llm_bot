@@ -9,5 +9,14 @@ __pycache__/
 # 环境变量（含 API 密钥）
 .env
 
+# 隐私与本地指令文件
+CLAUDE.md
+
 # 运行时生成的数据
 src/plugins/llm_chat/data/
+
+# 本地工具与临时产物
+.golutra/
+mp3/
+clone_once.py
+trim_audio.py
