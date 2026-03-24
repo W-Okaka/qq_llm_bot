@@ -1,6 +1,6 @@
 # QQ LLM Bot
 
-> 本项目由 Claude Code 开发。
+> 本项目纯 Claude Code 开发。
 
 基于 NoneBot2 + OneBot V11 的 QQ 聊天机器人，支持多模型切换与群聊技能路由（聊天、画图、搜索、语音、音乐等）。
 
