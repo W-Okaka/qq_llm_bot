@@ -8,6 +8,8 @@ __pycache__/
 
 # 环境变量（含 API 密钥）
 .env
+.env.*
+!.env.example
 
 # 隐私与本地指令文件
 CLAUDE.md

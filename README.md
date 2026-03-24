@@ -27,12 +27,29 @@ pip install nonebot2 nonebot-adapter-onebot httpx
 
 ### 2) 配置环境变量
 
-在项目根目录创建 `.env`，至少配置：
+先复制示例文件，再填写你自己的密钥：
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell 可用：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+至少配置：
 
 - `HOST` / `PORT`
 - `LLM_API_KEY` / `LLM_API_URL` / `LLM_MODEL`
 - `MINIMAX_API_KEY`
 - `ADMIN_TOKEN`（可选）
+
+注意：
+
+- 仓库中只应提交 `.env.example`，不要提交真实 `.env`
+- `test_api.py` 会从 `.env` 读取配置，不再内置密钥
 
 ### 3) 启动 Bot
 
@@ -82,5 +99,6 @@ qq_llm_bot/
 以下内容默认不上传仓库：
 
 - `.env`
+- `.env.*`（保留 `.env.example`）
 - `src/plugins/llm_chat/data/`
 - `CLAUDE.md`
